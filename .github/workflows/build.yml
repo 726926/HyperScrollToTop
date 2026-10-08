@@ -23,7 +23,7 @@ jobs:
           rm -rf settings.gradle build.gradle app/build.gradle app/src .gradle
 
           mkdir -p app/src/main/assets
-          mkdir -p app/src/main/java/com/hyper/scrolltop
+          mkdir -p app/src/main/java/com/hyper/blockscrolltop
 
           cat << 'EOF' > settings.gradle
           pluginManagement {
@@ -41,7 +41,7 @@ jobs:
                   maven { url 'https://api.xposed.info/' }
               }
           }
-          rootProject.name = "HyperScrollToTop"
+          rootProject.name = "DisableScrollToTop"
           include ':app'
           EOF
 
@@ -57,11 +57,11 @@ jobs:
           }
 
           android {
-              namespace 'com.hyper.scrolltop'
+              namespace 'com.hyper.blockscrolltop'
               compileSdk 34
 
               defaultConfig {
-                  applicationId "com.hyper.scrolltop"
+                  applicationId "com.hyper.blockscrolltop"
                   minSdk 26
                   targetSdk 34
                   versionCode 1
@@ -82,15 +82,15 @@ jobs:
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <!-- 解除作用域死锁，允许用户自由勾选App -->
               <application
                   android:allowBackup="true"
-                  android:label="状态栏回顶"
+                  android:label="禁用状态栏回顶"
                   android:supportsRtl="true">
                   <meta-data android:name="xposedmodule" android:value="true" />
-                  <meta-data android:name="xposeddescription" android:value="小米澎湃OS 3 状态栏点击回顶（必须在LSPosed中勾选SystemUI和需要生效的App）" />
+                  <meta-data android:name="xposeddescription" android:value="精准屏蔽小米澎湃OS 3 状态栏点击回顶误触（保留正常下拉通知栏与图标点击）" />
                   <meta-data android:name="xposedminversion" android:value="93" />
-                  <activity android:name="com.hyper.scrolltop.MainActivity" android:exported="true">
+                  <meta-data android:name="xposedscope" android:value="com.android.systemui" />
+                  <activity android:name="com.hyper.blockscrolltop.MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -101,28 +101,13 @@ jobs:
           EOF
 
           cat << 'EOF' > app/src/main/assets/xposed_init
-          com.hyper.scrolltop.MainHook
+          com.hyper.blockscrolltop.MainHook
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainHook.java
-          package com.hyper.scrolltop;
+          cat << 'EOF' > app/src/main/java/com/hyper/blockscrolltop/MainHook.java
+          package com.hyper.blockscrolltop;
 
-          import android.app.Activity;
-          import android.app.ActivityManager;
-          import android.content.BroadcastReceiver;
-          import android.content.ComponentName;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.content.IntentFilter;
-          import android.os.Build;
           import android.view.MotionEvent;
-          import android.view.View;
-          import android.view.ViewGroup;
-          import android.widget.AbsListView;
-          import android.widget.ScrollView;
-
-          import java.util.List;
-
           import de.robv.android.xposed.IXposedHookLoadPackage;
           import de.robv.android.xposed.XC_MethodHook;
           import de.robv.android.xposed.XposedHelpers;
@@ -130,170 +115,69 @@ jobs:
 
           public class MainHook implements IXposedHookLoadPackage {
 
-              private static final String ACTION_SCROLL_TOP = "com.hyper.scrolltop.ACTION_SCROLL_TO_TOP";
-              private float downY = 0;
-              private float downX = 0;
-              private long downTime = 0;
-
               @Override
               public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-                  // 1. 注入系统界面，监听点击
                   if ("com.android.systemui".equals(lpparam.packageName)) {
-                      hookSystemUI(lpparam);
+                      blockStatusBarClickOnly(lpparam);
                   }
-                  // 2. 注入目标应用，执行回顶
-                  hookActivity(lpparam);
               }
 
-              private void hookSystemUI(XC_LoadPackage.LoadPackageParam lpparam) {
-                  String[] classes = {
+              private void blockStatusBarClickOnly(XC_LoadPackage.LoadPackageParam lpparam) {
+                  String[] targetClasses = {
                       "com.android.systemui.statusbar.phone.PhoneStatusBarView",
                       "com.android.systemui.statusbar.window.StatusBarWindowView",
                       "com.miui.systemui.statusbar.phone.MiuiPhoneStatusBarView",
                       "com.android.systemui.statusbar.phone.NotificationShadeWindowView"
                   };
 
-                  for (String cls : classes) {
+                  for (String className : targetClasses) {
                       try {
-                          XposedHelpers.findAndHookMethod(cls, lpparam.classLoader, "dispatchTouchEvent", MotionEvent.class, new XC_MethodHook() {
-                              @Override
-                              protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                  MotionEvent event = (MotionEvent) param.args[0];
-                                  if (event == null) return;
-                                  int action = event.getActionMasked();
-                                  
-                                  if (action == MotionEvent.ACTION_DOWN) {
-                                      downX = event.getRawX();
-                                      downY = event.getRawY();
-                                      downTime = System.currentTimeMillis();
-                                  } else if (action == MotionEvent.ACTION_UP) {
-                                      long timeDiff = System.currentTimeMillis() - downTime;
-                                      float yDiff = Math.abs(event.getRawY() - downY);
-                                      float xDiff = Math.abs(event.getRawX() - downX);
-                                      
-                                      // 严格判定：触控时间小于300ms，且手指滑动不超过50像素，判定为点击
-                                      if (timeDiff < 300 && yDiff < 50 && xDiff < 50) {
-                                          View view = (View) param.thisObject;
-                                          sendExplicitBroadcast(view.getContext());
+                          XposedHelpers.findAndHookMethod(
+                              className,
+                              lpparam.classLoader,
+                              "dispatchTouchEvent",
+                              MotionEvent.class,
+                              new XC_MethodHook() {
+                                  private float startX = 0;
+                                  private float startY = 0;
+
+                                  @Override
+                                  protected void beforeHookedMethod(MethodHookParam param) {
+                                      MotionEvent event = (MotionEvent) param.args[0];
+                                      if (event == null) return;
+
+                                      int action = event.getActionMasked();
+                                      if (action == MotionEvent.ACTION_DOWN) {
+                                          startX = event.getRawX();
+                                          startY = event.getRawY();
+                                      } else if (action == MotionEvent.ACTION_UP) {
+                                          float endX = event.getRawX();
+                                          float endY = event.getRawY();
+                                          
+                                          float deltaX = Math.abs(endX - startX);
+                                          float deltaY = Math.abs(endY - startY);
+
+                                          // 精准判定：如果是原地轻触（没有大幅度滑动，排除下拉通知栏动作）
+                                          if (deltaX < 25 && deltaY < 25) {
+                                              // 直接吞掉此次纯点击事件，阻止系统触发回顶
+                                              param.setResult(true);
+                                          }
                                       }
                                   }
                               }
-                          });
+                          );
                       } catch (Throwable ignored) {}
                   }
-              }
-
-              private void sendExplicitBroadcast(Context context) {
-                  try {
-                      // 核心突破：自动获取当前屏幕上最顶层的App，并定向发送显式广播
-                      ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-                      List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(1);
-                      if (tasks != null && !tasks.isEmpty()) {
-                          ComponentName topActivity = tasks.get(0).topActivity;
-                          if (topActivity != null) {
-                              String packageName = topActivity.getPackageName();
-                              Intent intent = new Intent(ACTION_SCROLL_TOP);
-                              intent.setPackage(packageName); // 定向发往当前App
-                              intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-                              context.sendBroadcast(intent);
-                              return;
-                          }
-                      }
-                  } catch (Throwable ignored) {}
-                  
-                  // 备用机制
-                  Intent intent = new Intent(ACTION_SCROLL_TOP);
-                  intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-                  context.sendBroadcast(intent);
-              }
-
-              private void hookActivity(XC_LoadPackage.LoadPackageParam lpparam) {
-                  try {
-                      XposedHelpers.findAndHookMethod("android.app.Activity", lpparam.classLoader, "onResume", new XC_MethodHook() {
-                          @Override
-                          protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                              Activity activity = (Activity) param.thisObject;
-                              if (activity == null || activity.getWindow() == null) return;
-                              View decorView = activity.getWindow().getDecorView();
-                              if (decorView == null) return;
-
-                              int tagKey = 0x7f010099; 
-                              if (Boolean.TRUE.equals(decorView.getTag(tagKey))) return;
-
-                              BroadcastReceiver receiver = new BroadcastReceiver() {
-                                  @Override
-                                  public void onReceive(Context context, Intent intent) {
-                                      if (intent != null && ACTION_SCROLL_TOP.equals(intent.getAction())) {
-                                          scrollToTopRecursive(decorView);
-                                      }
-                                  }
-                              };
-
-                              IntentFilter filter = new IntentFilter(ACTION_SCROLL_TOP);
-                              if (Build.VERSION.SDK_INT >= 33) {
-                                  activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
-                              } else {
-                                  activity.registerReceiver(receiver, filter);
-                              }
-                              decorView.setTag(tagKey, true);
-                          }
-                      });
-                  } catch (Throwable ignored) {}
-              }
-
-              private boolean scrollToTopRecursive(View view) {
-                  if (view == null || !view.isShown()) return false;
-                  boolean scrolled = false;
-
-                  if (view instanceof ScrollView) {
-                      ((ScrollView) view).smoothScrollTo(0, 0);
-                      scrolled = true;
-                  } else if (view instanceof AbsListView) {
-                      ((AbsListView) view).smoothScrollToPosition(0);
-                      scrolled = true;
-                  } else {
-                      String className = view.getClass().getName();
-                      if (className.contains("RecyclerView")) {
-                          try {
-                              java.lang.reflect.Method method = view.getClass().getMethod("smoothScrollToPosition", int.class);
-                              method.invoke(view, 0);
-                              scrolled = true;
-                          } catch (Throwable ignored) {}
-                      } else if (className.contains("NestedScrollView")) {
-                          try {
-                              java.lang.reflect.Method method = view.getClass().getMethod("smoothScrollTo", int.class, int.class);
-                              method.invoke(view, 0, 0);
-                              scrolled = true;
-                          } catch (Throwable ignored) {}
-                      } else if (className.contains("WebView")) {
-                          try {
-                              java.lang.reflect.Method method = view.getClass().getMethod("scrollTo", int.class, int.class);
-                              method.invoke(view, 0, 0);
-                              scrolled = true;
-                          } catch (Throwable ignored) {}
-                      }
-                  }
-
-                  if (view instanceof ViewGroup) {
-                      ViewGroup group = (ViewGroup) view;
-                      for (int i = 0; i < group.getChildCount(); i++) {
-                          if (scrollToTopRecursive(group.getChildAt(i))) {
-                              scrolled = true;
-                          }
-                      }
-                  }
-                  return scrolled;
               }
           }
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainActivity.java
-          package com.hyper.scrolltop;
+          cat << 'EOF' > app/src/main/java/com/hyper/blockscrolltop/MainActivity.java
+          package com.hyper.blockscrolltop;
 
           import android.app.Activity;
           import android.os.Bundle;
           import android.widget.LinearLayout;
-          import android.widget.Switch;
           import android.widget.TextView;
 
           public class MainActivity extends Activity {
@@ -306,17 +190,16 @@ jobs:
                   layout.setPadding(60, 100, 60, 60);
 
                   TextView title = new TextView(this);
-                  title.setText("澎湃OS 状态栏回顶设置");
+                  title.setText("屏蔽状态栏回顶");
                   title.setTextSize(22f);
-                  title.setPadding(0, 0, 0, 40);
 
-                  Switch sw = new Switch(this);
-                  sw.setText("状态栏点击回顶"); // 已优化文案
-                  sw.setTextSize(18f);
-                  sw.setChecked(true);
+                  TextView desc = new TextView(this);
+                  desc.setText("已更新为精准过滤版本。正常下拉通知栏和点击图标不受影响，仅拦截误触点击回顶。请在LSPosed中勾选【系统界面(SystemUI)】后重启生效。");
+                  desc.setTextSize(16f);
+                  desc.setPadding(0, 30, 0, 0);
 
                   layout.addView(title);
-                  layout.addView(sw);
+                  layout.addView(desc);
                   setContentView(layout);
               }
           }
@@ -328,5 +211,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HyperScrollToTop-debug.apk
+          name: DisableScrollToTop-debug.apk
           path: app/build/outputs/apk/debug/*.apk
