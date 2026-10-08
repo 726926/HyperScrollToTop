@@ -20,14 +20,11 @@ jobs:
 
       - name: Build APK Cleanly
         run: |
-          # 1. 清理旧文件
           rm -rf settings.gradle build.gradle app/build.gradle app/src .gradle
 
-          # 2. 创建目录
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
 
-          # 3. 生成配置文件
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -124,26 +121,12 @@ jobs:
 
           import de.robv.android.xposed.IXposedHookLoadPackage;
           import de.robv.android.xposed.XC_MethodHook;
-          import de.robv.android.xposed.XSharedPreferences;
           import de.robv.android.xposed.XposedHelpers;
           import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
           public class MainHook implements IXposedHookLoadPackage {
 
-              private static final String PACKAGE_NAME = "com.hyper.scrolltop";
               private static final String ACTION_SCROLL_TOP = "com.hyper.scrolltop.ACTION_SCROLL_TO_TOP";
-              private static final String PREF_KEY_ENABLE = "enable_scroll_top";
-
-              private boolean isModuleEnabled() {
-                  try {
-                      XSharedPreferences pref = new XSharedPreferences(PACKAGE_NAME, "settings");
-                      pref.makeWorldReadable();
-                      pref.reload();
-                      return pref.getBoolean(PREF_KEY_ENABLE, true);
-                  } catch (Throwable t) {
-                      return true;
-                  }
-              }
 
               @Override
               public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
@@ -156,7 +139,9 @@ jobs:
               private void hookSystemUIStatusBar(XC_LoadPackage.LoadPackageParam lpparam) {
                   String[] statusBarClasses = new String[]{
                       "com.android.systemui.statusbar.phone.PhoneStatusBarView",
-                      "com.android.systemui.statusbar.window.StatusBarWindowView"
+                      "com.android.systemui.statusbar.window.StatusBarWindowView",
+                      "com.android.systemui.statusbar.phone.CentralSurfacesImpl",
+                      "com.android.systemui.statusbar.phone.CollapsedStatusBarFragment"
                   };
 
                   for (String className : statusBarClasses) {
@@ -168,13 +153,13 @@ jobs:
                               MotionEvent.class,
                               new XC_MethodHook() {
                                   @Override
-                                  protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                                      if (!isModuleEnabled()) return;
+                                  protected void afterHookedMethod(MethodHookParam param) {
                                       MotionEvent event = (MotionEvent) param.args[0];
                                       if (event != null && event.getAction() == MotionEvent.ACTION_UP) {
                                           View view = (View) param.thisObject;
-                                          if (view != null) {
+                                          if (view != null && view.getContext() != null) {
                                               Intent intent = new Intent(ACTION_SCROLL_TOP);
+                                              intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
                                               view.getContext().sendBroadcast(intent);
                                           }
                                       }
@@ -193,7 +178,7 @@ jobs:
                           "onResume",
                           new XC_MethodHook() {
                               @Override
-                              protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                              protected void afterHookedMethod(MethodHookParam param) {
                                   Activity activity = (Activity) param.thisObject;
                                   if (activity == null || activity.getWindow() == null) return;
                                   View decorView = activity.getWindow().getDecorView();
@@ -205,7 +190,7 @@ jobs:
                                   BroadcastReceiver receiver = new BroadcastReceiver() {
                                       @Override
                                       public void onReceive(Context context, Intent intent) {
-                                          if (intent != null && ACTION_SCROLL_TOP.equals(intent.getAction()) && isModuleEnabled()) {
+                                          if (intent != null && ACTION_SCROLL_TOP.equals(intent.getAction())) {
                                               scrollToTopRecursive(decorView);
                                           }
                                       }
@@ -267,8 +252,6 @@ jobs:
           package com.hyper.scrolltop;
 
           import android.app.Activity;
-          import android.content.Context;
-          import android.content.SharedPreferences;
           import android.os.Bundle;
           import android.widget.LinearLayout;
           import android.widget.Switch;
@@ -288,14 +271,10 @@ jobs:
                   title.setTextSize(22f);
                   title.setPadding(0, 0, 0, 40);
 
-                  SharedPreferences prefs = getSharedPreferences("settings", Context.MODE_PRIVATE);
                   Switch sw = new Switch(this);
-                  sw.setText("状态栏点击回顶功能");
+                  sw.setText("状态栏点击回顶");
                   sw.setTextSize(18f);
-                  sw.setChecked(prefs.getBoolean("enable_scroll_top", true));
-                  sw.setOnCheckedChangeListener((buttonView, isChecked) -> 
-                      prefs.edit().putBoolean("enable_scroll_top", isChecked).apply()
-                  );
+                  sw.setChecked(true);
 
                   layout.addView(title);
                   layout.addView(sw);
@@ -304,7 +283,6 @@ jobs:
           }
           EOF
 
-          # 4. 生成与 AGP 8.2.2 匹配的 Wrapper 并进行打包
           gradle wrapper --gradle-version 8.2
           ./gradlew assembleDebug --warning-mode none
 
