@@ -290,7 +290,7 @@ jobs:
 
                   SharedPreferences prefs = getSharedPreferences("settings", Context.MODE_PRIVATE);
                   Switch sw = new Switch(this);
-                  sw.setText("状态栏点击回顶开关");
+                  sw.setText("状态栏点击回顶功能");
                   sw.setTextSize(18f);
                   sw.setChecked(prefs.getBoolean("enable_scroll_top", true));
                   sw.setOnCheckedChangeListener((buttonView, isChecked) -> 
