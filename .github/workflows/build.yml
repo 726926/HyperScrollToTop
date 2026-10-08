@@ -18,71 +18,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Auto Generate Configs & Build APK
+      - name: Generate Configs
         run: |
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
+          printf "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral(); maven { url 'https://api.xposed.info/' } } }\nrootProject.name = 'HyperScrollToTop'\ninclude ':app'\n" > settings.gradle
+          printf "plugins {\n  id 'com.android.application' version '8.2.2' apply false\n  id 'org.jetbrains.kotlin.android' version '1.9.22' apply false\n}\n" > build.gradle
+          printf "plugins {\n  id 'com.android.application'\n  id 'org.jetbrains.kotlin.android'\n}\nandroid {\n  namespace 'com.hyper.scrolltop'\n  compileSdk 34\n  defaultConfig {\n    applicationId 'com.hyper.scrolltop'\n    minSdk 26\n    targetSdk 34\n    versionCode 1\n    versionName '1.0'\n  }\n  compileOptions {\n    sourceCompatibility JavaVersion.VERSION_17\n    targetCompatibility JavaVersion.VERSION_17\n  }\n  kotlinOptions { jvmTarget = '17' }\n}\ndependencies {\n  implementation 'androidx.core:core-ktx:1.12.0'\n  implementation 'androidx.appcompat:appcompat:1.6.1'\n  compileOnly 'de.robv.android.xposed:api:82'\n}\n" > app/build.gradle
 
-          cat << 'EOF' > settings.gradle
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://api.xposed.info/' }
-              }
-          }
-          rootProject.name = "HyperScrollToTop"
-          include ':app'
-          EOF
-
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.2.2' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-          }
-          EOF
-
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
-          }
-
-          android {
-              namespace 'com.hyper.scrolltop'
-              compileSdk 34
-
-              defaultConfig {
-                  applicationId "com.hyper.scrolltop"
-                  minSdk 26
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-          }
-
-          dependencies {
-              implementation 'androidx.core:core-ktx:1.12.0'
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              compileOnly 'de.robv.android.xposed:api:82'
-          }
-          EOF
-
-          gradle wrapper
-          ./gradlew assembleDebug
+      - name: Build APK
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
