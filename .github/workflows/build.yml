@@ -18,6 +18,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Clean & Generate Pure Java Project
         run: |
           rm -rf settings.gradle build.gradle app/build.gradle app/src
@@ -47,7 +50,7 @@ jobs:
 
           cat << 'EOF' > build.gradle
           plugins {
-              id 'com.android.application' version '8.1.4' apply false
+              id 'com.android.application' version '8.0.2' apply false
           }
           EOF
 
@@ -301,9 +304,8 @@ jobs:
           }
           EOF
 
-      - name: Build APK via Gradle
-        run: |
-          gradle assembleDebug
+          gradle wrapper --gradle-version 8.1.1
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
