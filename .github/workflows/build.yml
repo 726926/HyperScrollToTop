@@ -18,15 +18,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Generate Code & Build APK
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
+      - name: Clean & Generate Fresh Project Files
         run: |
+          # 1. 彻底清理旧文件，防止配置冲突
+          rm -rf settings.gradle build.gradle app/build.gradle app/src
+
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
 
+          # 2. 生成 settings.gradle
           cat << 'EOF' > settings.gradle
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
@@ -39,13 +47,15 @@ jobs:
           include ':app'
           EOF
 
+          # 3. 生成 根目录 build.gradle
           cat << 'EOF' > build.gradle
           plugins {
-              id 'com.android.application' version '8.2.2' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+              id 'com.android.application' version '8.1.4' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
           }
           EOF
 
+          # 4. 生成 app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -78,6 +88,7 @@ jobs:
           }
           EOF
 
+          # 5. 生成 AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -99,10 +110,12 @@ jobs:
           </manifest>
           EOF
 
+          # 6. 生成 xposed_init
           cat << 'EOF' > app/src/main/assets/xposed_init
           com.hyper.scrolltop.MainHook
           EOF
 
+          # 7. 生成 MainHook.kt
           cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainHook.kt
           package com.hyper.scrolltop
 
@@ -250,6 +263,7 @@ jobs:
           }
           EOF
 
+          # 8. 生成 MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainActivity.kt
           package com.hyper.scrolltop
 
@@ -292,8 +306,10 @@ jobs:
           }
           EOF
 
-          gradle wrapper
-          ./gradlew assembleDebug
+      - name: Build APK via Dedicated Wrapper
+        run: |
+          gradle wrapper --gradle-version 8.4
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
