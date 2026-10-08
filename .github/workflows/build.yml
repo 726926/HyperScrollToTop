@@ -18,15 +18,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Auto Accept Licenses & Generate Code & Build
+      - name: Generate Code & Build APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
-
-          # 自动接受 Android SDK 授权协议
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
           cat << 'EOF' > settings.gradle
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
@@ -35,6 +32,7 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://api.xposed.info/' }
               }
           }
           rootProject.name = "HyperScrollToTop"
@@ -202,7 +200,7 @@ jobs:
                                   }
 
                                   val filter = IntentFilter(ACTION_SCROLL_TOP)
-                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                  if (Build.VERSION.SDK_INT >= 33) {
                                       activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
                                   } else {
                                       activity.registerReceiver(receiver, filter)
@@ -218,9 +216,13 @@ jobs:
               private fun scrollToTopRecursive(view: View): Boolean {
                   if (!view.isShown) return false
 
-                  when (view) {
-                      is ScrollView -> { view.smoothScrollTo(0, 0); return true }
-                      is AbsListView -> { view.smoothScrollToPosition(0); return true }
+                  if (view is ScrollView) {
+                      view.smoothScrollTo(0, 0)
+                      return true
+                  }
+                  if (view is AbsListView) {
+                      view.smoothScrollToPosition(0)
+                      return true
                   }
 
                   val className = view.javaClass.name
