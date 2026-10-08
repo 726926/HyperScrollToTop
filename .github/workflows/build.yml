@@ -18,19 +18,272 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Generate Configs
+      - name: Generate Complete Source Code & Configs
         run: |
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
-          printf "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral(); maven { url 'https://api.xposed.info/' } } }\nrootProject.name = 'HyperScrollToTop'\ninclude ':app'\n" > settings.gradle
-          printf "plugins {\n  id 'com.android.application' version '8.2.2' apply false\n  id 'org.jetbrains.kotlin.android' version '1.9.22' apply false\n}\n" > build.gradle
-          printf "plugins {\n  id 'com.android.application'\n  id 'org.jetbrains.kotlin.android'\n}\nandroid {\n  namespace 'com.hyper.scrolltop'\n  compileSdk 34\n  defaultConfig {\n    applicationId 'com.hyper.scrolltop'\n    minSdk 26\n    targetSdk 34\n    versionCode 1\n    versionName '1.0'\n  }\n  compileOptions {\n    sourceCompatibility JavaVersion.VERSION_17\n    targetCompatibility JavaVersion.VERSION_17\n  }\n  kotlinOptions { jvmTarget = '17' }\n}\ndependencies {\n  implementation 'androidx.core:core-ktx:1.12.0'\n  implementation 'androidx.appcompat:appcompat:1.6.1'\n  compileOnly 'de.robv.android.xposed:api:82'\n}\n" > app/build.gradle
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url 'https://api.xposed.info/' }
+              }
+          }
+          rootProject.name = "HyperScrollToTop"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.hyper.scrolltop'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.hyper.scrolltop"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.recyclerview:recyclerview:1.3.2'
+              compileOnly 'de.robv.android.xposed:api:82'
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="状态栏回顶"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+                  <meta-data android:name="xposedmodule" android:value="true" />
+                  <meta-data android:name="xposeddescription" android:value="小米澎湃OS 3 状态栏点击回顶模块" />
+                  <meta-data android:name="xposedminversion" android:value="93" />
+                  <meta-data android:name="xposedscope" android:value="com.android.systemui" />
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/assets/xposed_init
+          com.hyper.scrolltop.MainHook
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainHook.kt
+          package com.hyper.scrolltop
+
+          import android.app.Activity
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.os.Build
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.AbsListView
+          import android.widget.ScrollView
+          import androidx.core.widget.NestedScrollView
+          import androidx.recyclerview.widget.RecyclerView
+          import de.robv.android.xposed.IXposedHookLoadPackage
+          import de.robv.android.xposed.XC_MethodHook
+          import de.robv.android.xposed.XSharedPreferences
+          import de.robv.android.xposed.XposedHelpers
+          import de.robv.android.xposed.callbacks.XC_LoadPackage
+
+          class MainHook : IXposedHookLoadPackage {
+
+              companion object {
+                  private const val PACKAGE_NAME = "com.hyper.scrolltop"
+                  private const val ACTION_SCROLL_TOP = "com.hyper.scrolltop.ACTION_SCROLL_TO_TOP"
+                  private const val PREF_KEY_ENABLE = "enable_scroll_top"
+              }
+
+              private fun isModuleEnabled(): Boolean {
+                  return try {
+                      val pref = XSharedPreferences(PACKAGE_NAME, "settings")
+                      pref.makeWorldReadable()
+                      pref.reload()
+                      pref.getBoolean(PREF_KEY_ENABLE, true)
+                  } catch (e: Throwable) {
+                      true
+                  }
+              }
+
+              override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+                  if (lpparam.packageName == "com.android.systemui") {
+                      hookSystemUIStatusBar(lpparam)
+                  }
+                  hookActivityScroll(lpparam)
+              }
+
+              private fun hookSystemUIStatusBar(lpparam: XC_LoadPackage.LoadPackageParam) {
+                  val statusBarClasses = arrayOf(
+                      "com.android.systemui.statusbar.phone.PhoneStatusBarView",
+                      "com.android.systemui.statusbar.window.StatusBarWindowView"
+                  )
+
+                  for (className in statusBarClasses) {
+                      try {
+                          XposedHelpers.findAndHookMethod(
+                              className,
+                              lpparam.classLoader,
+                              "onTouchEvent",
+                              MotionEvent::class.java,
+                              object : XC_MethodHook() {
+                                  override fun afterHookedMethod(param: MethodHookParam) {
+                                      if (!isModuleEnabled()) return
+                                      val event = param.args[0] as? MotionEvent ?: return
+                                      if (event.action == MotionEvent.ACTION_UP) {
+                                          val view = param.thisObject as? View ?: return
+                                          val intent = Intent(ACTION_SCROLL_TOP)
+                                          view.context.sendBroadcast(intent)
+                                      }
+                                  }
+                              }
+                          )
+                      } catch (_: Throwable) {}
+                  }
+              }
+
+              private fun hookActivityScroll(lpparam: XC_LoadPackage.LoadPackageParam) {
+                  try {
+                      XposedHelpers.findAndHookMethod(
+                          "android.app.Activity",
+                          lpparam.classLoader,
+                          "onResume",
+                          object : XC_MethodHook() {
+                              override fun afterHookedMethod(param: MethodHookParam) {
+                                  val activity = param.thisObject as? Activity ?: return
+                                  val decorView = activity.window?.decorView ?: return
+                                  val tagKey = 0x7f010088
+                                  if (decorView.getTag(tagKey) == true) return
+
+                                  val receiver = object : BroadcastReceiver() {
+                                      override fun onReceive(context: Context?, intent: Intent?) {
+                                          if (intent?.action == ACTION_SCROLL_TOP && isModuleEnabled()) {
+                                              scrollToTopRecursive(decorView)
+                                          }
+                                      }
+                                  }
+
+                                  val filter = IntentFilter(ACTION_SCROLL_TOP)
+                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                      activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                                  } else {
+                                      activity.registerReceiver(receiver, filter)
+                                  }
+
+                                  decorView.setTag(tagKey, true)
+                              }
+                          }
+                      )
+                  } catch (_: Throwable) {}
+              }
+
+              private fun scrollToTopRecursive(view: View): Boolean {
+                  if (!view.isShown) return false
+                  when (view) {
+                      is RecyclerView -> { view.smoothScrollToPosition(0); return true }
+                      is ScrollView -> { view.smoothScrollTo(0, 0); return true }
+                      is NestedScrollView -> { view.smoothScrollTo(0, 0); return true }
+                      is AbsListView -> { view.smoothScrollToPosition(0); return true }
+                      is ViewGroup -> {
+                          for (i in 0 until view.childCount) {
+                              if (scrollToTopRecursive(view.getChildAt(i))) return true
+                          }
+                      }
+                  }
+                  return false
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainActivity.kt
+          package com.hyper.scrolltop
+
+          import android.content.Context
+          import android.os.Bundle
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.appcompat.widget.SwitchCompat
+
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(60, 100, 60, 60)
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "澎湃OS 状态栏回顶设置"
+                      textSize = 22f
+                      setPadding(0, 0, 0, 40)
+                  }
+
+                  val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                  val switch = SwitchCompat(this).apply {
+                      text = "状态栏点击回顶开关"
+                      textSize = 18f
+                      isChecked = prefs.getBoolean("enable_scroll_top", true)
+                      setOnCheckedChangeListener { _, isChecked ->
+                          prefs.edit().putBoolean("enable_scroll_top", isChecked).apply()
+                      }
+                  }
+
+                  layout.addView(title)
+                  layout.addView(switch)
+                  setContentView(layout)
+              }
+          }
+          EOF
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: |
+          gradle wrapper
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
