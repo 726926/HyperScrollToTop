@@ -18,16 +18,22 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Clean & Generate Pure Java Project
+      - name: Build APK Cleanly
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
-          rm -rf settings.gradle build.gradle app/build.gradle app/src
+          # 1. 彻底清理缓存与旧文件
+          rm -rf settings.gradle build.gradle app/build.gradle app/src .gradle
 
+          # 2. 自动接受 Android SDK 许可协议
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo -e "\n24333f8a637b82e1e5c316bfe35861474314f8b6\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a637b82e1e5c316bfe35861474314f8b6" > "$ANDROID_HOME/licenses/android-sdk-license"
+
+          # 3. 创建工程目录
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
 
+          # 4. 生成 settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -48,12 +54,14 @@ jobs:
           include ':app'
           EOF
 
+          # 5. 生成根目录 build.gradle
           cat << 'EOF' > build.gradle
           plugins {
-              id 'com.android.application' version '8.0.2' apply false
+              id 'com.android.application' version '8.1.0' apply false
           }
           EOF
 
+          # 6. 生成 app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -82,6 +90,7 @@ jobs:
           }
           EOF
 
+          # 7. 生成 AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -103,10 +112,12 @@ jobs:
           </manifest>
           EOF
 
+          # 8. 生成 xposed_init
           cat << 'EOF' > app/src/main/assets/xposed_init
           com.hyper.scrolltop.MainHook
           EOF
 
+          # 9. 生成 MainHook.java
           cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainHook.java
           package com.hyper.scrolltop;
 
@@ -263,6 +274,7 @@ jobs:
           }
           EOF
 
+          # 10. 生成 MainActivity.java
           cat << 'EOF' > app/src/main/java/com/hyper/scrolltop/MainActivity.java
           package com.hyper.scrolltop;
 
@@ -304,8 +316,8 @@ jobs:
           }
           EOF
 
-          gradle wrapper --gradle-version 8.1.1
-          ./gradlew assembleDebug
+          # 11. 执行原生编译
+          gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
