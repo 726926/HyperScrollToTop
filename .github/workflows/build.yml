@@ -18,10 +18,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Generate Complete Source Code & Configs
+      - name: Generate Source Code & Configs
         run: |
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/hyper/scrolltop
@@ -281,6 +278,8 @@ jobs:
           EOF
 
       - name: Build APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           gradle wrapper
           ./gradlew assembleDebug
